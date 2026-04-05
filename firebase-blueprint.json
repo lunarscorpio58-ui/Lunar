@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Stores user customization and profile information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID from Firebase Auth." },
+        "displayName": { "type": "string", "description": "The name the user wants to be called." },
+        "displayName_lowercase": { "type": "string", "description": "Lowercase version of displayName for search." },
+        "photoURL": { "type": "string", "description": "URL to the user's custom avatar." },
+        "theme": { "type": "string", "description": "User's preferred theme (light, dark, sepia, rose).", "enum": ["light", "dark", "sepia", "rose"] },
+        "bio": { "type": "string", "description": "A short bio about the user." }
+      },
+      "required": ["uid", "displayName"]
+    },
+    "Chat": {
+      "title": "Chat Session",
+      "description": "Represents an individual or group chat session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "description": "Name of the group chat (null for individual)." },
+        "type": { "type": "string", "enum": ["individual", "group"] },
+        "members": { "type": "array", "items": { "type": "string" }, "description": "Array of user UIDs." },
+        "lastMessage": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "members"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A single message within a chat session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "image": { "type": "string" },
+        "video": { "type": "string" },
+        "audio": { "type": "string", "description": "Base64 encoded audio or URL." },
+        "file": { "type": "object" }
+      },
+      "required": ["id", "chatId", "senderId", "text", "timestamp"]
+    },
+    "Call": {
+      "title": "Video Call Signaling",
+      "description": "Handles WebRTC signaling for video calls.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chatId": { "type": "string" },
+        "callerId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ringing", "active", "ended", "rejected"] },
+        "offer": { "type": "object" },
+        "answer": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "chatId", "callerId", "receiverId", "status"]
+    },
+    "Mood": {
+      "title": "User Mood Log",
+      "description": "A record of a user's mood at a specific time.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "mood": { "type": "string", "description": "The selected mood (e.g., happy, sad, anxious)." },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "note": { "type": "string", "description": "Optional note about the mood." }
+      },
+      "required": ["id", "uid", "mood", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "User", "description": "User profile documents." },
+    "/chats/{chatId}": { "schema": "Chat", "description": "Chat session documents." },
+    "/chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Messages within a chat." },
+    "/calls/{callId}": { "schema": "Call", "description": "Signaling for video calls." },
+    "/calls/{callId}/iceCandidates/{candidateId}": { "schema": "object", "description": "WebRTC ICE candidates." },
+    "/users/{uid}/moods/{moodId}": { "schema": "Mood", "description": "User's mood history." }
+  }
+}

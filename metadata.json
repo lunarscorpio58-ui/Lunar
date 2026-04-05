@@ -1,0 +1,5 @@
+{
+  "name": "ZomeAi",
+  "description": "An empathetic AI companion designed to provide comfort and emotional support.",
+  "requestFramePermissions": ["camera", "microphone"]
+}

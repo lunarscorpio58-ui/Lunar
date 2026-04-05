@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (required, 1-50 chars)
+    //   - photoURL: string (optional, URL)
+    //   - theme: string (optional, enum: light, dark, sepia, rose)
+    //   - bio: string (optional, 0-200 chars)
+    //
+    // Collection: chats
+    // Document ID: {chatId}
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (optional for individual, 1-50 chars for group)
+    //   - type: string (required, enum: individual, group)
+    //   - members: list (required, size 2-50)
+    //   - lastMessage: map (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: messages (subcollection of chats)
+    // Document ID: {messageId}
+    // Fields:
+    //   - id: string (required)
+    //   - chatId: string (required)
+    //   - senderId: string (required)
+    //   - text: string (required, 1-2000 chars)
+    //   - timestamp: timestamp (required)
+    //   - image: string (optional, URL)
+    //   - video: string (optional, URL)
+    //   - audio: string (optional, URL or base64)
+    //   - file: map (optional)
+    //
+    // Collection: calls
+    // Document ID: {callId}
+    // Fields:
+    //   - id: string (required)
+    //   - chatId: string (required)
+    //   - callerId: string (required)
+    //   - receiverId: string (required)
+    //   - status: string (required, enum: ringing, active, ended, rejected)
+    //   - offer: map (optional)
+    //   - answer: map (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: moods (subcollection of users)
+    // Document ID: {moodId}
+    // Fields:
+    //   - uid: string (required)
+    //   - mood: string (required, enum: happy, sad, anxious, calm, energetic, tired)
+    //   - timestamp: timestamp (required)
+    //   - note: string (optional, 0-500 chars)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "lunarscorpio58@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isChatMember(chatId) {
+      return isAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:image/.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName']) &&
+             data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50 &&
+             (!('photoURL' in data) || isValidUrl(data.photoURL)) &&
+             (!('theme' in data) || data.theme in ['light', 'dark', 'sepia', 'rose']) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 200));
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['type', 'members', 'createdAt']) &&
+             data.type in ['individual', 'group'] &&
+             data.members is list && data.members.size() >= 1 && data.members.size() <= 50 &&
+             request.auth.uid in data.members &&
+             data.createdAt is timestamp &&
+             (data.type == 'individual' || (data.keys().hasAll(['name', 'name_lowercase']) && data.name is string && data.name.size() >= 1 && data.name.size() <= 50)) &&
+             (!('lastMessage' in data) || (data.lastMessage is map && data.lastMessage.keys().hasAll(['text', 'senderId', 'timestamp'])));
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['chatId', 'senderId', 'text', 'timestamp']) &&
+             data.senderId == request.auth.uid &&
+             data.text is string && data.text.size() >= 1 && data.text.size() <= 2000 &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidMood(data) {
+      return data.keys().hasAll(['uid', 'mood', 'timestamp']) &&
+             data.uid == request.auth.uid &&
+             data.mood in ['happy', 'sad', 'anxious', 'calm', 'energetic', 'tired'] &&
+             data.timestamp is timestamp &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 500));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(uid) && isValidUser(request.resource.data);
+      allow update: if isOwner(uid) && isValidUser(request.resource.data);
+
+      match /moods/{moodId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid) && isValidMood(request.resource.data);
+      }
+    }
+
+    match /chats/{chatId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidChat(request.resource.data);
+      allow update: if isAuthenticated() && (
+        (request.auth.uid in resource.data.members && isValidChat(request.resource.data)) ||
+        (resource.data.type == 'group' && 
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+         request.resource.data.members.hasAll(resource.data.members) &&
+         request.resource.data.members.size() == resource.data.members.size() + 1 &&
+         request.auth.uid in request.resource.data.members)
+      );
+      
+      match /messages/{messageId} {
+        allow read: if isChatMember(chatId);
+        allow create: if isChatMember(chatId) && isValidMessage(request.resource.data);
+      }
+    }
+
+    match /calls/{callId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.receiverId);
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.callerId;
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.receiverId);
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.receiverId);
+
+      match /iceCandidates/{candidateId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+      }
+    }
+  }
+}
